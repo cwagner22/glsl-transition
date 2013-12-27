@@ -1,9 +1,201 @@
 (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);throw new Error("Cannot find module '"+o+"'")}var f=n[o]={exports:{}};t[o][0].call(f.exports,function(e){var n=t[o][1][e];return s(n?n:e)},f,f.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
+var BezierEasing = require("bezier-easing");
+
+var cumulativeOffset = function(element) {
+  var top = 0, left = 0;
+  do {
+    top += element.offsetTop  || 0;
+    left += element.offsetLeft || 0;
+    element = element.offsetParent;
+  } while(element);
+
+  return {
+    top: top,
+    left: left
+  };
+};
+
+function BezierEasingEditor (canvas) {
+  var ctx = canvas.getContext("2d");
+  var self = this;
+   
+  var bezier;
+  var fun;
+
+  var currentStep = [0, 0];
+
+  function setBezier (b) {
+    bezier = b;
+    for (var i = 0; i < b.length; ++i)
+      b[i] = Math.floor(b[i]*100)/100;
+    fun = BezierEasing.apply(this, b);
+    if (self.onChange) self.onChange(fun);
+  }
+  function getBezierFunction () {
+    return fun;
+  }
+  this.getEasing = getBezierFunction;
+
+  var HANDLE_RADIUS = 0.03;
+
+  // state variables
+  // handles positions
+  var handle = [ null, [0.25, 0.25], [0.75, 0.75] ];
+  var draggingHandle = 0;
+  var hoveringHandle = 0;
+
+  var hasChanged;
+  var hovering = false;
+  var stime = +new Date();
+  var oneHandleClicked = false;
+
+  function positionWithE (e) {
+    var o = cumulativeOffset(canvas);
+    return { x: relativeX(e.clientX-o.left), y: relativeY(e.clientY-o.top) };
+  }
+
+  function setup() {
+    canvas.addEventListener("mousedown", function (e) {
+      e.preventDefault();
+      var p = positionWithE(e);
+      var hnum = findHandle(p.x, p.y);
+      if (hnum) {
+        draggingHandle = hnum;
+        oneHandleClicked = true;
+      }
+    });
+    canvas.addEventListener("mouseup", function (e) {
+      var p = positionWithE(e);
+      if (draggingHandle) {
+        setHandle(draggingHandle, p.x, p.y);
+        draggingHandle = 0;
+      }
+    });
+    canvas.addEventListener("mousemove", function (e) {
+      e.preventDefault();
+      var p = positionWithE(e);
+      if (draggingHandle) {
+        setHandle(draggingHandle, p.x, p.y);
+      }
+      hoveringHandle = draggingHandle || findHandle(p.x, p.y);
+    });
+    canvas.addEventListener("mouseover", function () {
+      hovering = true;
+      hasChanged = true;
+    });
+    canvas.addEventListener("mouseout", function () {
+      hovering = false;
+      hasChanged = true;
+      draggingHandle = 0;
+      hoveringHandle = 0;
+    });
+
+    syncBezier();
+  }
+
+  function render () {
+    var now = +new Date();
+
+    ctx.save();
+    ctx.fillStyle = 'white';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // Draw grid
+
+    ctx.translate(0, canvas.height);
+    ctx.scale(canvas.width, -canvas.height);
+
+    // Draw projections
+    ctx.lineWidth = 0.01;
+    ctx.strokeStyle = "rgba(0,0,0,0.5)";
+    ctx.beginPath();
+    ctx.moveTo(currentStep[0], 0);
+    ctx.lineTo(currentStep[0], currentStep[1]);
+    ctx.lineTo(0, currentStep[1]);
+    ctx.stroke();
+
+    // Draw bezier
+    ctx.lineWidth = 0.02;
+    ctx.strokeStyle = "black";
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.bezierCurveTo(handle[1][0], handle[1][1], handle[2][0], handle[2][1], 1, 1);
+    ctx.stroke();
+
+    // Draw handle
+    ctx.strokeStyle = "red";
+    ctx.fillStyle = "white";
+    ctx.lineWidth = 0.01;
+
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(handle[1][0], handle[1][1]);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(1, 1);
+    ctx.lineTo(handle[2][0], handle[2][1]);
+    ctx.stroke();
+
+    var r = HANDLE_RADIUS;
+    if (!oneHandleClicked) {
+      r += 0.2*HANDLE_RADIUS*Math.cos((stime-now)/150);
+    }
+    for (var i=1; i<handle.length; ++i) {
+      var h = handle[i];
+      ctx.beginPath();
+      ctx.arc(h[0], h[1], r, 0, Math.PI*2);
+      ctx.fillStyle = (hoveringHandle === i) ? "red" : "white";
+      ctx.fill();
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function syncBezier () {
+    setBezier([ handle[1][0], handle[1][1], handle[2][0], handle[2][1] ]);
+  }
+
+  function findHandle (x, y) {
+    for (var i=1; i<handle.length; ++i) {
+      var h = handle[i];
+      var radius = HANDLE_RADIUS;
+      var dx = x - h[0];
+      var dy = y - h[1];
+      if (dx*dx+dy*dy < radius*radius)
+        return i;
+    }
+    return 0;
+  }
+
+  function setHandle (num, x, y) {
+    handle [num] = [x, y];
+    syncBezier();
+    render();
+  }
+
+  function relativeX (x) {
+    return x/canvas.width;
+  }
+  function relativeY (y) {
+    return 1-y/canvas.height;
+  }
+
+  setup();
+  (function loop () {
+    window.requestAnimationFrame(function() {
+      loop();
+      render();
+    }, canvas);
+  }());
+}
+
+module.exports = BezierEasingEditor;
+
+},{"bezier-easing":3}],2:[function(require,module,exports){
 var GlslTransition = require("glsl-transition");
 var Q = require("q");
 var Qimage = require("qimage");
-var BezierEasing = require("bezier-easing");
-var ease = BezierEasing.css.ease;
+var BezierEasingEditor = require("./bezier-easing-editor");
 
 // Bind sliders
 var transitionDuration, stayTime;
@@ -11,6 +203,14 @@ var $duration = document.getElementById("duration");
 var $delay = document.getElementById("delay");
 var $durationValue = document.getElementById("durationValue");
 var $delayValue = document.getElementById("delayValue");
+var $transitionname = document.getElementById("transitionname");
+var $easingtext = document.getElementById("easingtext");
+var easingEditor = new BezierEasingEditor(document.getElementById("easing"));
+
+function syncEasing () {
+  var easing = easingEditor.getEasing();
+  $easingtext.innerHTML = easing.toString();
+}
 function syncDuration () {
   $durationValue.innerHTML = $duration.value;
   transitionDuration = parseInt($duration.value, 10);
@@ -19,8 +219,10 @@ function syncDelay () {
   $delayValue.innerHTML = $delay.value;
   stayTime = parseInt($delay.value, 10);
 }
+syncEasing();
 syncDuration();
 syncDelay();
+easingEditor.onChange = syncEasing;
 $duration.addEventListener("change", syncDuration, false);
 $delay.addEventListener("change", syncDelay, false);
 
@@ -29,17 +231,18 @@ $delay.addEventListener("change", syncDelay, false);
 var canvas = document.getElementById("viewport");
 var Transition = GlslTransition(canvas);
 var transitions = [
-  Transition(require("./transitions/deformation.glsl"), { uniforms: { size: 0.04, zoom: 20.0 } }),
-  Transition(require("./transitions/blur.glsl"), { uniforms: { size: 0.03 } }),
-  Transition(require("./transitions/wind.glsl"), { uniforms: { size: 0.2 } }),
-  Transition(require("./transitions/rainbow.glsl"), { uniforms: { size: 0.5 } })
+  ["deformation", Transition(require("./transitions/deformation.glsl"), { uniforms: { size: 0.04, zoom: 20.0 } })],
+  ["blur"       , Transition(require("./transitions/blur.glsl"), { uniforms: { size: 0.03 } })],
+  ["wind"       , Transition(require("./transitions/wind.glsl"), { uniforms: { size: 0.2 } })],
+  ["rainbow"    , Transition(require("./transitions/rainbow.glsl"), { uniforms: { size: 0.5 } })]
 ];
 
 function loopForever (images) {
   return (function loop (i) {
-    var transition = transitions[Math.floor(Math.random() * transitions.length)];
+    var t = transitions[Math.floor(Math.random() * transitions.length)];
+    $transitionname.innerHTML = t[0];
     var next = i+1 === images.length ? 0 : i+1;
-    return transition({ from: images[i], to: images[next] }, transitionDuration, ease)
+    return t[1]({ from: images[i], to: images[next] }, transitionDuration, easingEditor.getEasing())
       .delay(stayTime)
       .then(function (){ return loop(next); });
   }(0));
@@ -68,7 +271,7 @@ Q.all(awesomeWikimediaImages.map(crossOriginLoading))
  .then(loopForever)
  .done();
 
-},{"./transitions/blur.glsl":45,"./transitions/deformation.glsl":46,"./transitions/rainbow.glsl":47,"./transitions/wind.glsl":48,"bezier-easing":2,"glsl-transition":42,"q":43,"qimage":44}],2:[function(require,module,exports){
+},{"./bezier-easing-editor":1,"./transitions/blur.glsl":46,"./transitions/deformation.glsl":47,"./transitions/rainbow.glsl":48,"./transitions/wind.glsl":49,"glsl-transition":43,"q":44,"qimage":45}],3:[function(require,module,exports){
 (function (definition) {
   if (typeof exports === "object") {
     module.exports = definition();
@@ -96,6 +299,7 @@ Q.all(awesomeWikimediaImages.map(crossOriginLoading))
       if (typeof arguments[i] !== "number" || isNaN(arguments[i]) || !isFinite(arguments[i]))
         throw new Error("BezierEasing arguments should be integers.");
     }
+    if (mX1 < 0 || mX1 > 1 || mX2 < 0 || mX2 > 1) throw new Error("BezierEasing x values must be in [0, 1] range.");
    
     function A(aA1, aA2) { return 1.0 - 3.0 * aA2 + 3.0 * aA1; }
     function B(aA1, aA2) { return 3.0 * aA2 - 6.0 * aA1; }
@@ -114,7 +318,7 @@ Q.all(awesomeWikimediaImages.map(crossOriginLoading))
     function GetTForX(aX) {
       // Newton raphson iteration
       var aGuessT = aX;
-      for (var i = 0; i < 4; ++i) {
+      for (var i = 0; i < 8; ++i) {
         var currentSlope = GetSlope(aGuessT, mX1, mX2);
         if (currentSlope === 0.0) return aGuessT;
         var currentX = CalcBezier(aGuessT, mX1, mX2) - aX;
@@ -147,7 +351,7 @@ Q.all(awesomeWikimediaImages.map(crossOriginLoading))
 
 }));
 
-},{}],3:[function(require,module,exports){
+},{}],4:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -449,7 +653,7 @@ function isUndefined(arg) {
   return arg === void 0;
 }
 
-},{}],4:[function(require,module,exports){
+},{}],5:[function(require,module,exports){
 if (typeof Object.create === 'function') {
   // implementation from standard node.js 'util' module
   module.exports = function inherits(ctor, superCtor) {
@@ -474,7 +678,7 @@ if (typeof Object.create === 'function') {
   }
 }
 
-},{}],5:[function(require,module,exports){
+},{}],6:[function(require,module,exports){
 // shim for using process in browser
 
 var process = module.exports = {};
@@ -528,7 +732,7 @@ process.chdir = function (dir) {
     throw new Error('process.chdir is not supported');
 };
 
-},{}],6:[function(require,module,exports){
+},{}],7:[function(require,module,exports){
 var base64 = require('base64-js')
 var TA = require('typedarray')
 
@@ -1682,7 +1886,7 @@ function assert (test, message) {
   if (!test) throw new Error(message || 'Failed assertion')
 }
 
-},{"base64-js":7,"typedarray":8}],7:[function(require,module,exports){
+},{"base64-js":8,"typedarray":9}],8:[function(require,module,exports){
 (function (exports) {
 	'use strict';
 
@@ -1768,7 +1972,7 @@ function assert (test, message) {
 	module.exports.fromByteArray = uint8ToBase64;
 }());
 
-},{}],8:[function(require,module,exports){
+},{}],9:[function(require,module,exports){
 var undefined = (void 0); // Paranoia
 
 // Beyond this value, index getters/setters (i.e. array[0], array[1]) are so slow to
@@ -2400,7 +2604,7 @@ function packF32(v) { return packIEEE754(v, 8, 23); }
 
 }());
 
-},{}],9:[function(require,module,exports){
+},{}],10:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -2474,7 +2678,7 @@ function onend() {
   });
 }
 
-},{"./readable.js":13,"./writable.js":15,"inherits":4,"process/browser.js":11}],10:[function(require,module,exports){
+},{"./readable.js":14,"./writable.js":16,"inherits":5,"process/browser.js":12}],11:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -2603,9 +2807,9 @@ Stream.prototype.pipe = function(dest, options) {
   return dest;
 };
 
-},{"./duplex.js":9,"./passthrough.js":12,"./readable.js":13,"./transform.js":14,"./writable.js":15,"events":3,"inherits":4}],11:[function(require,module,exports){
-module.exports=require(5)
-},{}],12:[function(require,module,exports){
+},{"./duplex.js":10,"./passthrough.js":13,"./readable.js":14,"./transform.js":15,"./writable.js":16,"events":4,"inherits":5}],12:[function(require,module,exports){
+module.exports=require(6)
+},{}],13:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -2648,7 +2852,7 @@ PassThrough.prototype._transform = function(chunk, encoding, cb) {
   cb(null, chunk);
 };
 
-},{"./transform.js":14,"inherits":4}],13:[function(require,module,exports){
+},{"./transform.js":15,"inherits":5}],14:[function(require,module,exports){
 var process=require("__browserify_process");// Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -3583,7 +3787,7 @@ function indexOf (xs, x) {
   return -1;
 }
 
-},{"./index.js":10,"__browserify_process":5,"buffer":6,"events":3,"inherits":4,"process/browser.js":11,"string_decoder":16}],14:[function(require,module,exports){
+},{"./index.js":11,"__browserify_process":6,"buffer":7,"events":4,"inherits":5,"process/browser.js":12,"string_decoder":17}],15:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -3789,7 +3993,7 @@ function done(stream, er) {
   return stream.push(null);
 }
 
-},{"./duplex.js":9,"inherits":4}],15:[function(require,module,exports){
+},{"./duplex.js":10,"inherits":5}],16:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -4177,7 +4381,7 @@ function endWritable(stream, state, cb) {
   state.ended = true;
 }
 
-},{"./index.js":10,"buffer":6,"inherits":4,"process/browser.js":11}],16:[function(require,module,exports){
+},{"./index.js":11,"buffer":7,"inherits":5,"process/browser.js":12}],17:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -4370,7 +4574,7 @@ function base64DetectIncompleteChar(buffer) {
   return incomplete;
 }
 
-},{"buffer":6}],17:[function(require,module,exports){
+},{"buffer":7}],18:[function(require,module,exports){
 "use strict"
 
 var glslExports = require("glsl-exports")
@@ -4596,7 +4800,7 @@ function makeShader(gl, vert_source, frag_source) {
 
 module.exports = makeShader
 
-},{"glsl-exports":18,"uniq":29}],18:[function(require,module,exports){
+},{"glsl-exports":19,"uniq":30}],19:[function(require,module,exports){
 "use strict"
 
 var glslTokenizer = require("glsl-tokenizer")
@@ -4657,10 +4861,10 @@ function glslGlobals(src) {
 }
 
 module.exports = glslGlobals
-},{"glsl-parser":19,"glsl-tokenizer":24,"through":28}],19:[function(require,module,exports){
+},{"glsl-parser":20,"glsl-tokenizer":25,"through":29}],20:[function(require,module,exports){
 module.exports = require('./lib/index')
 
-},{"./lib/index":21}],20:[function(require,module,exports){
+},{"./lib/index":22}],21:[function(require,module,exports){
 var state
   , token
   , tokens
@@ -4927,7 +5131,7 @@ function fail(message) {
   return function() { return state.unexpected(message) }
 }
 
-},{}],21:[function(require,module,exports){
+},{}],22:[function(require,module,exports){
 module.exports = parser
 
 var through = require('through')
@@ -5887,7 +6091,7 @@ function is_precision(token) {
          token.data === 'lowp'
 }
 
-},{"./expr":20,"./scope":22,"through":23}],22:[function(require,module,exports){
+},{"./expr":21,"./scope":23,"through":24}],23:[function(require,module,exports){
 module.exports = scope
 
 function scope(state) {
@@ -5927,7 +6131,7 @@ proto.find = function(name, fail) {
   return null
 }
 
-},{}],23:[function(require,module,exports){
+},{}],24:[function(require,module,exports){
 var process=require("__browserify_process");var Stream = require('stream')
 
 // through
@@ -6027,7 +6231,7 @@ function through (write, end) {
 }
 
 
-},{"__browserify_process":5,"stream":10}],24:[function(require,module,exports){
+},{"__browserify_process":6,"stream":11}],25:[function(require,module,exports){
 module.exports = tokenize
 
 var through = require('through')
@@ -6361,7 +6565,7 @@ function tokenize() {
   }
 }
 
-},{"./lib/builtins":25,"./lib/literals":26,"./lib/operators":27,"through":28}],25:[function(require,module,exports){
+},{"./lib/builtins":26,"./lib/literals":27,"./lib/operators":28,"through":29}],26:[function(require,module,exports){
 module.exports = [
     'gl_Position'
   , 'gl_PointSize'
@@ -6507,7 +6711,7 @@ module.exports = [
   , 'textureCubeLod'
 ]
 
-},{}],26:[function(require,module,exports){
+},{}],27:[function(require,module,exports){
 module.exports = [
   // current
     'precision'
@@ -6602,7 +6806,7 @@ module.exports = [
   , 'using'
 ]
 
-},{}],27:[function(require,module,exports){
+},{}],28:[function(require,module,exports){
 module.exports = [
     '<<='
   , '>>='
@@ -6650,7 +6854,7 @@ module.exports = [
   , '}'
 ]
 
-},{}],28:[function(require,module,exports){
+},{}],29:[function(require,module,exports){
 var process=require("__browserify_process");var Stream = require('stream')
 
 // through
@@ -6760,7 +6964,7 @@ function through (write, end, opts) {
 }
 
 
-},{"__browserify_process":5,"stream":10}],29:[function(require,module,exports){
+},{"__browserify_process":6,"stream":11}],30:[function(require,module,exports){
 "use strict"
 
 function unique_pred(list, compare) {
@@ -6818,29 +7022,29 @@ function unique(list, compare, sorted) {
 }
 
 module.exports = unique
-},{}],30:[function(require,module,exports){
-arguments[4][18][0].apply(exports,arguments)
-},{"glsl-parser":31,"glsl-tokenizer":36,"through":40}],31:[function(require,module,exports){
+},{}],31:[function(require,module,exports){
 arguments[4][19][0].apply(exports,arguments)
-},{"./lib/index":33}],32:[function(require,module,exports){
-module.exports=require(20)
-},{}],33:[function(require,module,exports){
+},{"glsl-parser":32,"glsl-tokenizer":37,"through":41}],32:[function(require,module,exports){
+arguments[4][20][0].apply(exports,arguments)
+},{"./lib/index":34}],33:[function(require,module,exports){
 module.exports=require(21)
-},{"./expr":32,"./scope":34,"through":35}],34:[function(require,module,exports){
+},{}],34:[function(require,module,exports){
 module.exports=require(22)
-},{}],35:[function(require,module,exports){
+},{"./expr":33,"./scope":35,"through":36}],35:[function(require,module,exports){
 module.exports=require(23)
-},{"__browserify_process":5,"stream":10}],36:[function(require,module,exports){
+},{}],36:[function(require,module,exports){
 module.exports=require(24)
-},{"./lib/builtins":37,"./lib/literals":38,"./lib/operators":39,"through":40}],37:[function(require,module,exports){
+},{"__browserify_process":6,"stream":11}],37:[function(require,module,exports){
 module.exports=require(25)
-},{}],38:[function(require,module,exports){
+},{"./lib/builtins":38,"./lib/literals":39,"./lib/operators":40,"through":41}],38:[function(require,module,exports){
 module.exports=require(26)
 },{}],39:[function(require,module,exports){
 module.exports=require(27)
 },{}],40:[function(require,module,exports){
 module.exports=require(28)
-},{"__browserify_process":5,"stream":10}],41:[function(require,module,exports){
+},{}],41:[function(require,module,exports){
+module.exports=require(29)
+},{"__browserify_process":6,"stream":11}],42:[function(require,module,exports){
 var process=require("__browserify_process");// vim:ts=4:sts=4:sw=4:
 /*!
  *
@@ -8779,7 +8983,7 @@ return Q;
 
 });
 
-},{"__browserify_process":5}],42:[function(require,module,exports){
+},{"__browserify_process":6}],43:[function(require,module,exports){
 var Q = require("q");
 var createShader = require("gl-shader");
 var glslExports = require("glsl-exports"); // FIXME: temporary required because gl-shader does not expose types
@@ -8812,35 +9016,65 @@ var requestAnimationFrame = (function(){
 
 function identity (x) { return x; }
 
+/**
+ * API:
+ * GlslTransition(canvas)(glslSource, options)(uniforms, duration, easing) // => Promise
+ */
+
+/**
+ * ~~~ First Call in the API
+ * GlslTransition(canvas)
+ * Creates a Transitions context with a canvas.
+ */
 function GlslTransition (canvas) {
   if (arguments.length !== 1 || !("getContext" in canvas))
     throw new Error("Bad arguments. usage: GlslTransition(canvas)");
 
-  var gl = getWebGLContext(canvas);
-  var currentTransition;
-  var drawing = false;
+  // First level variables
+  var gl, currentShader, currentAnimationD, transitions;
 
-  canvas.addEventListener("webglcontextlost", function (e) {
+  function init () {
+    transitions = [];
+    gl = getWebGLContext(canvas);
+    canvas.addEventListener("webglcontextlost", onContextLost, false);
+    canvas.addEventListener("webglcontextrestored", onContextRestored, false);
+  }
+
+  function onContextLost (e) {
     e.preventDefault();
     gl = null;
-  });
-  canvas.addEventListener("webglcontextrestored", function () {
-    gl = getWebGLContext(canvas);
-    // TODO trigger some internal events to being able to recompute all programs...
-  });
+    if (currentAnimationD) {
+      currentAnimationD.reject(e);
+      currentAnimationD = null;
+    }
+    for (var i=0; i<transitions.length; ++i) {
+      transitions[i].onContextLost(e);
+    }
+  }
 
-  function createTexture (image) {
+  function onContextRestored (e) {
+    gl = getWebGLContext(canvas);
+    for (var i=0; i<transitions.length; ++i) {
+      transitions[i].onContextRestored(e);
+    }
+  }
+
+  function createTexture () {
     var texture = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, texture);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.bindTexture(gl.TEXTURE_2D, null);
     return texture;
   }
+
+  function syncTexture (texture, image) {
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+  }
+
   function loadTransitionShader (glsl) {
     var shader = createShader(gl, VERTEX_SHADER, glsl);
     gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
@@ -8853,33 +9087,52 @@ function GlslTransition (canvas) {
     gl.drawArrays(gl.TRIANGLES, 0, 6);
   }
 
-  return function createTransition (glsl, options) {
+  /**
+   * ~~~ Second Call in the API
+   * createTransition(glslSource, [options])
+   * Creates a GLSL Transition for the current canvas context.
+   */
+  function createTransition (glsl, options) {
     var progressParameter = options && options.progress || "progress";
     var resolutionParameter = options && options.resolution || "resolution";
     var defaultUniforms = options && options.uniforms || {};
     if (arguments.length < 1 || arguments.length > 2 || typeof glsl !== "string" || typeof progressParameter !== "string")
       throw new Error("Bad arguments. usage: T(glsl [, options])");
 
-    var shader, textureUnits;
+    // Second level variables
+    var shader, textureUnits, textures, currentAnimationD;
 
+    var types = glslExports(glsl); // FIXME: we can remove the glslExports call when gl-shader gives access to those types
     function load () {
+      if (!gl) return;
       shader = loadTransitionShader(glsl);
       textureUnits = {};
-      var types = glslExports(glsl); // FIXME: we can remove the glslExports call when gl-shader gives access to those types
+      textures = {};
       var i = 0;
       for (var name in types.uniforms) {
         var t = types.uniforms[name];
         if (t === "sampler2D") {
-          textureUnits[name] = i++;
+          gl.activeTexture(gl.TEXTURE0 + i);
+          textureUnits[name] = i;
+          textures[name] = createTexture();
+          i ++;
         }
       }
+    }
+
+    function onContextLost () {
+      shader = null;
+    }
+
+    function onContextRestored () {
+      load();
     }
 
     function syncViewport () {
       var w = canvas.width, h = canvas.height;
       gl.viewport(0, 0, w, h);
-      if (currentTransition) {
-        currentTransition.uniforms[resolutionParameter] = [ w, h ];
+      if (currentShader) {
+        currentShader.uniforms[resolutionParameter] = [ w, h ];
       }
       var x1 = 0, x2 = w, y1 = 0, y2 = h;
       gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
@@ -8899,9 +9152,10 @@ function GlslTransition (canvas) {
     function setUniform (name, value) {
       if (name in textureUnits) {
         var i = textureUnits[name];
+        var texture = textures[name];
         gl.activeTexture(gl.TEXTURE0 + i);
-        var texture = createTexture(value); // FIXME TODO: we may me able to create it once!
         gl.bindTexture(gl.TEXTURE_2D, texture);
+        syncTexture(texture, value);
         shader.uniforms[name] = i;
       }
       else if (typeof value === "number") {
@@ -8909,45 +9163,65 @@ function GlslTransition (canvas) {
       }
     }
 
-    function startRender (transitionDuration, transitionEasing) {
-      // TODO: there is no error case handle yet! we have to stop when something goes wrong (context lost, exception in draw,...)
+    function animate (transitionDuration, transitionEasing) {
       var transitionStart = Date.now();
+      var frames = 0;
       var d = Q.defer();
-      drawing = true;
+      currentAnimationD = d;
       (function render () {
+        if (!currentAnimationD) return;
+        ++ frames;
         var now = Date.now();
         var p = (now-transitionStart)/transitionDuration;
-        if (p<1) {
-          requestAnimationFrame(render, canvas);
-          setProgress(transitionEasing(p));
-          draw();
+        try {
+          if (p<1) {
+            requestAnimationFrame(render, canvas);
+            setProgress(transitionEasing(p));
+            draw();
+          }
+          else {
+            setProgress(transitionEasing(1));
+            draw();
+            d.resolve({ startAt: transitionStart, endAt: now, elapsedTime: now-transitionStart, frames: frames }); // Resolve some meta-data of the successful transition.
+            currentAnimationD = null;
+          }
         }
-        else {
-          setProgress(transitionEasing(1));
-          draw();
-          drawing = false;
-          d.resolve();
+        catch (e) {
+          d.reject(e);
+          currentAnimationD = null;
         }
       }());
       return d.promise;
     }
 
-    load();
-    // TODO on webglcontextrestored, recompute the shader..
-
-    return function transition (uniforms, duration, easing) {
+    /**
+     * ~~~ Third Call in the API
+     * transition(uniforms, duration, [easing])
+     * Perform a transition animation with uniforms paremeters to give in the GLSL, for a given duration and a custom easing function (default is linear).
+     */
+    function transition (uniforms, duration, easing) {
       if (!easing) easing = identity;
-      if (arguments.length < 2 || arguments.length > 3 || typeof duration !== "number" || duration <= 0 || typeof easing !== "function")
-        throw new Error("Bad arguments. usage: t(imageFrom, imageTo, duration, easing) -- duration must be an integer > 0 and easing is optional.");
+      // Validate Bad Arguments static errors
+      if (arguments.length < 2 || arguments.length > 3 || typeof uniforms !== "object" || typeof duration !== "number" || duration <= 0 || typeof easing !== "function")
+        throw new Error("Bad arguments. usage: t(uniforms, duration, easing) -- uniforms is an Object, duration an integer > 0, easing an optional function.");
 
+      // Validate Runtime errors
       if (!gl) return Q.reject(new Error("WebGL context is null."));
-      if (drawing) return Q.reject(new Error("another transition is already running."));
+      if (currentAnimationD) return Q.reject(new Error("another transition is already running."));
+      try {
+        if (!shader) load(); // Possibly shader was not loaded before because of no gl available.
+      }
+      catch (e) {
+        return Q.reject(e);
+      }
 
-      if (currentTransition !== shader) {
-        currentTransition = shader;
+      // If shader has changed, we need to bind it
+      if (currentShader !== shader) {
+        currentShader = shader;
         shader.bind();
       }
 
+      // Set all uniforms
       for (var name in shader.uniforms) {
         if (name === progressParameter || name === resolutionParameter) continue;
         if (name in defaultUniforms) {
@@ -8963,9 +9237,24 @@ function GlslTransition (canvas) {
       syncViewport();
       setProgress(0);
 
-      return startRender(duration, easing);
-    };
-  };
+      // Perform the transition
+      return animate(duration, easing);
+    }
+
+    transition.onContextLost = onContextLost;
+    transition.onContextRestored = onContextRestored;
+
+    // Finally load the transition and put it in the transitions array
+    load();
+    transitions.push(transition);
+
+    return transition;
+  }
+
+  // Finally init the GlslTransition context
+  init();
+
+  return createTransition;
 }
 
 GlslTransition.isSupported = function () {
@@ -8975,9 +9264,9 @@ GlslTransition.isSupported = function () {
 
 module.exports = GlslTransition;
 
-},{"gl-shader":17,"glsl-exports":30,"q":41}],43:[function(require,module,exports){
-module.exports=require(41)
-},{"__browserify_process":5}],44:[function(require,module,exports){
+},{"gl-shader":18,"glsl-exports":31,"q":42}],44:[function(require,module,exports){
+module.exports=require(42)
+},{"__browserify_process":6}],45:[function(require,module,exports){
 /*
  * Qimage - Simple Promise Image Loader based on Q
  */
@@ -9030,12 +9319,12 @@ module.exports=require(41)
 
 
 
-},{"q":43}],45:[function(require,module,exports){
+},{"q":44}],46:[function(require,module,exports){
 module.exports = "\n#define GLSLIFY 1\n\n#ifdef GL_ES\n\nprecision highp float;\n#endif\n\nuniform sampler2D from;\nuniform sampler2D to;\nuniform float progress;\nuniform vec2 resolution;\nuniform float size;\nvec4 blur(sampler2D t, vec2 c, float b) {\n  vec4 sum = texture2D(t, c);\n  sum += texture2D(t, c + b * vec2(-0.326212, -0.405805));\n  sum += texture2D(t, c + b * vec2(-0.840144, -0.073580));\n  sum += texture2D(t, c + b * vec2(-0.695914, 0.457137));\n  sum += texture2D(t, c + b * vec2(-0.203345, 0.620716));\n  sum += texture2D(t, c + b * vec2(0.962340, -0.194983));\n  sum += texture2D(t, c + b * vec2(0.473434, -0.480026));\n  sum += texture2D(t, c + b * vec2(0.519456, 0.767022));\n  sum += texture2D(t, c + b * vec2(0.185461, -0.893124));\n  sum += texture2D(t, c + b * vec2(0.507431, 0.064425));\n  sum += texture2D(t, c + b * vec2(0.896420, 0.412458));\n  sum += texture2D(t, c + b * vec2(-0.321940, -0.932615));\n  sum += texture2D(t, c + b * vec2(-0.791559, -0.597705));\n  return sum / 13.0;\n}\nvoid main() {\n  vec2 p = gl_FragCoord.xy / resolution.xy;\n  float inv = 1. - progress;\n  gl_FragColor = inv * blur(from, p, progress * size) + progress * blur(to, p, inv * size);\n}"
-},{}],46:[function(require,module,exports){
-module.exports = "\n#define GLSLIFY 1\n\n#ifdef GL_ES\n\nprecision highp float;\n#endif\n\nuniform sampler2D from;\nuniform sampler2D to;\nuniform float progress;\nuniform vec2 resolution;\nuniform float size;\nuniform float zoom;\nvoid main() {\n  vec2 p = gl_FragCoord.xy / resolution.xy;\n  float inv = 1. - progress;\n  vec2 disp = size * vec2(cos(zoom * p.x), sin(zoom * p.y));\n  vec4 texTo = texture2D(to, p + inv * disp);\n  vec4 texFrom = texture2D(from, p + progress * disp);\n  gl_FragColor = texTo * progress + texFrom * inv;\n}"
 },{}],47:[function(require,module,exports){
-module.exports = "\n#define GLSLIFY 1\n\n#ifdef GL_ES\n\nprecision highp float;\n#endif\n\nuniform sampler2D from;\nuniform sampler2D to;\nuniform float progress;\nuniform vec2 resolution;\nuniform float size;\nvoid main() {\n  vec2 p = gl_FragCoord.xy / resolution.xy;\n  float x = smoothstep(p.x - size, p.x + size, progress * (1. + 2. * size) - size);\n  vec4 texTo = texture2D(to, p);\n  vec4 texFrom = texture2D(from, p);\n  vec4 xTo = vec4(smoothstep(0.00, 0.50, x), smoothstep(0.25, 0.75, x), smoothstep(0.50, 1.00, x), x);\n  vec4 xFrom = vec4(1. - x);\n  gl_FragColor = texTo * xTo + texFrom * xFrom;\n}"
+module.exports = "\n#define GLSLIFY 1\n\n#ifdef GL_ES\n\nprecision highp float;\n#endif\n\nuniform sampler2D from;\nuniform sampler2D to;\nuniform float progress;\nuniform vec2 resolution;\nuniform float size;\nuniform float zoom;\nvoid main() {\n  vec2 p = gl_FragCoord.xy / resolution.xy;\n  float inv = 1. - progress;\n  vec2 disp = size * vec2(cos(zoom * p.x), sin(zoom * p.y));\n  vec4 texTo = texture2D(to, p + inv * disp);\n  vec4 texFrom = texture2D(from, p + progress * disp);\n  gl_FragColor = texTo * progress + texFrom * inv;\n}"
 },{}],48:[function(require,module,exports){
+module.exports = "\n#define GLSLIFY 1\n\n#ifdef GL_ES\n\nprecision highp float;\n#endif\n\nuniform sampler2D from;\nuniform sampler2D to;\nuniform float progress;\nuniform vec2 resolution;\nuniform float size;\nvoid main() {\n  vec2 p = gl_FragCoord.xy / resolution.xy;\n  float x = smoothstep(p.x - size, p.x + size, progress * (1. + 2. * size) - size);\n  vec4 texTo = texture2D(to, p);\n  vec4 texFrom = texture2D(from, p);\n  vec4 xTo = vec4(smoothstep(0.00, 0.50, x), smoothstep(0.25, 0.75, x), smoothstep(0.50, 1.00, x), x);\n  vec4 xFrom = vec4(1. - x);\n  gl_FragColor = texTo * xTo + texFrom * xFrom;\n}"
+},{}],49:[function(require,module,exports){
 module.exports = "\n#define GLSLIFY 1\n\n#ifdef GL_ES\n\nprecision highp float;\n#endif\n\nuniform sampler2D from;\nuniform sampler2D to;\nuniform float progress;\nuniform vec2 resolution;\nuniform float size;\nfloat rand(vec2 co) {\n  return fract(sin(dot(co.xy, vec2(12.9898, 78.233))) * 43758.5453);\n}\nvoid main() {\n  vec2 p = gl_FragCoord.xy / resolution.xy;\n  float xTo = progress * (1.0 + 2.0 * size) - size;\n  float r = size * rand(vec2(0, p.y));\n  xTo = clamp(1. - (p.x - xTo - r) / size, 0., 1.);\n  float xFrom = 1.0 - xTo;\n  gl_FragColor = xTo * texture2D(to, p) + xFrom * texture2D(from, p);\n}"
-},{}]},{},[1])
+},{}]},{},[2])
