@@ -231,6 +231,10 @@ $delay.addEventListener("change", syncDelay, false);
 var canvas = document.getElementById("viewport");
 var Transition = GlslTransition(canvas);
 var transitions = [
+  ["vwipe"      , Transition(require("./transitions/wipe.glsl"), { uniforms: { direction: [1, 0], smoothness: 0.5 } })],
+  ["hwipe"      , Transition(require("./transitions/wipe.glsl"), { uniforms: { direction: [0, -1], smoothness: 0.5 } })],
+  ["circleopen" , Transition(require("./transitions/circleopen.glsl"), { uniforms: { opening: true, smoothness: 0.3 } })],
+  ["fadetocolor", Transition(require("./transitions/fadetocolor.glsl"), { uniforms: { color: [1.0,1.0,1.0], colorPhase: 0.5 } })],
   ["deformation", Transition(require("./transitions/deformation.glsl"), { uniforms: { size: 0.04, zoom: 20.0 } })],
   ["blur"       , Transition(require("./transitions/blur.glsl"), { uniforms: { size: 0.03 } })],
   ["wind"       , Transition(require("./transitions/wind.glsl"), { uniforms: { size: 0.2 } })],
@@ -263,15 +267,35 @@ var awesomeWikimediaImages = [
   "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6f/Arlington_Row_Bibury.jpg/1280px-Arlington_Row_Bibury.jpg"
 ];
 
+var localImages = [
+  "./images/0.jpg",
+  "./images/1.jpg",
+  "./images/2.jpg",
+  "./images/3.jpg",
+  "./images/4.jpg",
+  "./images/5.jpg",
+  "./images/6.jpg",
+  "./images/7.jpg",
+  "./images/8.jpg",
+  "./images/9.jpg"
+];
+
+var images = awesomeWikimediaImages;
+
+if (window.location.hostname === "localhost") {
+  images = localImages;
+}
+
 function crossOriginLoading (src) {
   return Qimage(src, { crossorigin: "Anonymous" });
 }
 
-Q.all(awesomeWikimediaImages.map(crossOriginLoading))
+
+Q.all(images.map(crossOriginLoading))
  .then(loopForever)
  .done();
 
-},{"./bezier-easing-editor":1,"./transitions/blur.glsl":39,"./transitions/deformation.glsl":40,"./transitions/rainbow.glsl":41,"./transitions/wind.glsl":42,"glsl-transition":36,"q":37,"qimage":38}],3:[function(require,module,exports){
+},{"./bezier-easing-editor":1,"./transitions/blur.glsl":39,"./transitions/circleopen.glsl":40,"./transitions/deformation.glsl":41,"./transitions/fadetocolor.glsl":42,"./transitions/rainbow.glsl":43,"./transitions/wind.glsl":44,"./transitions/wipe.glsl":45,"glsl-transition":36,"q":37,"qimage":38}],3:[function(require,module,exports){
 (function (definition) {
   if (typeof exports === "object") {
     module.exports = definition();
@@ -697,7 +721,8 @@ process.nextTick = (function () {
     if (canPost) {
         var queue = [];
         window.addEventListener('message', function (ev) {
-            if (ev.source === window && ev.data === 'process-tick') {
+            var source = ev.source;
+            if ((source === window || source === null) && ev.data === 'process-tick') {
                 ev.stopPropagation();
                 if (queue.length > 0) {
                     var fn = queue.shift();
@@ -1094,8 +1119,11 @@ function BufferCopy (target, target_start, start, end) {
 }
 
 function _base64Slice (buf, start, end) {
-  var bytes = buf.slice(start, end)
-  return base64.fromByteArray(bytes)
+  if (start === 0 && end === buf.length) {
+    return base64.fromByteArray(buf)
+  } else {
+    return base64.fromByteArray(buf.slice(start, end))
+  }
 }
 
 function _utf8Slice (buf, start, end) {
@@ -1830,13 +1858,11 @@ function base64ToBytes (str) {
 }
 
 function blitBuffer (src, dst, offset, length) {
-  var pos, i = 0
-  while (i < length) {
+  var pos
+  for (var i = 0; i < length; i++) {
     if ((i + offset >= dst.length) || (i >= src.length))
       break
-
     dst[i + offset] = src[i]
-    i++
   }
   return i
 }
@@ -1887,14 +1913,41 @@ function assert (test, message) {
 }
 
 },{"base64-js":8,"typedarray":9}],8:[function(require,module,exports){
-(function (exports) {
+var lookup = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
+;(function (exports) {
 	'use strict';
 
-	var lookup = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  var Arr = (typeof Uint8Array !== 'undefined')
+    ? Uint8Array
+    : Array
+
+	var ZERO   = '0'.charCodeAt(0)
+	var PLUS   = '+'.charCodeAt(0)
+	var SLASH  = '/'.charCodeAt(0)
+	var NUMBER = '0'.charCodeAt(0)
+	var LOWER  = 'a'.charCodeAt(0)
+	var UPPER  = 'A'.charCodeAt(0)
+
+	function decode (elt) {
+		var code = elt.charCodeAt(0)
+		if(code === PLUS)
+			return 62 // '+'
+		if(code === SLASH)
+			return 63 // '/'
+		if(code < NUMBER)
+			return -1 //no match
+		if(code < NUMBER + 10)
+			return code - NUMBER + 26 + 26
+		if(code < UPPER + 26)
+			return code - UPPER
+		if(code < LOWER + 26)
+			return code - LOWER + 26
+	}
 
 	function b64ToByteArray(b64) {
 		var i, j, l, tmp, placeHolders, arr;
-	
+
 		if (b64.length % 4 > 0) {
 			throw 'Invalid string. Length must be a multiple of 4';
 		}
@@ -1904,29 +1957,38 @@ function assert (test, message) {
 		// represent one byte
 		// if there is only one, then the three characters before it represent 2 bytes
 		// this is just a cheap hack to not do indexOf twice
-		placeHolders = b64.indexOf('=');
-		placeHolders = placeHolders > 0 ? b64.length - placeHolders : 0;
+		var len = b64.length
+		placeHolders = '=' === b64.charAt(len - 2) ? 2 : '=' === b64.charAt(len - 1) ? 1 : 0
 
 		// base64 is 4/3 + up to two characters of the original data
-		arr = [];//new Uint8Array(b64.length * 3 / 4 - placeHolders);
+		arr = new Arr(b64.length * 3 / 4 - placeHolders);
 
 		// if there are placeholders, only get up to the last complete 4 chars
+
+
+
 		l = placeHolders > 0 ? b64.length - 4 : b64.length;
 
+		var L = 0
+
+		function push (v) {
+			arr[L++] = v
+		}
+
 		for (i = 0, j = 0; i < l; i += 4, j += 3) {
-			tmp = (lookup.indexOf(b64[i]) << 18) | (lookup.indexOf(b64[i + 1]) << 12) | (lookup.indexOf(b64[i + 2]) << 6) | lookup.indexOf(b64[i + 3]);
-			arr.push((tmp & 0xFF0000) >> 16);
-			arr.push((tmp & 0xFF00) >> 8);
-			arr.push(tmp & 0xFF);
+			tmp = (decode(b64.charAt(i)) << 18) | (decode(b64.charAt(i + 1)) << 12) | (decode(b64.charAt(i + 2)) << 6) | decode(b64.charAt(i + 3));
+			push((tmp & 0xFF0000) >> 16);
+			push((tmp & 0xFF00) >> 8);
+			push(tmp & 0xFF);
 		}
 
 		if (placeHolders === 2) {
-			tmp = (lookup.indexOf(b64[i]) << 2) | (lookup.indexOf(b64[i + 1]) >> 4);
-			arr.push(tmp & 0xFF);
+			tmp = (decode(b64.charAt(i)) << 2) | (decode(b64.charAt(i + 1)) >> 4);
+			push(tmp & 0xFF);
 		} else if (placeHolders === 1) {
-			tmp = (lookup.indexOf(b64[i]) << 10) | (lookup.indexOf(b64[i + 1]) << 4) | (lookup.indexOf(b64[i + 2]) >> 2);
-			arr.push((tmp >> 8) & 0xFF);
-			arr.push(tmp & 0xFF);
+			tmp = (decode(b64.charAt(i)) << 10) | (decode(b64.charAt(i + 1)) << 4) | (decode(b64.charAt(i + 2)) >> 2);
+			push((tmp >> 8) & 0xFF);
+			push(tmp & 0xFF);
 		}
 
 		return arr;
@@ -1938,8 +2000,12 @@ function assert (test, message) {
 			output = "",
 			temp, length;
 
+		function encode (num) {
+			return lookup.charAt(num)
+		}
+
 		function tripletToBase64 (num) {
-			return lookup[num >> 18 & 0x3F] + lookup[num >> 12 & 0x3F] + lookup[num >> 6 & 0x3F] + lookup[num & 0x3F];
+			return encode(num >> 18 & 0x3F) + encode(num >> 12 & 0x3F) + encode(num >> 6 & 0x3F) + encode(num & 0x3F);
 		};
 
 		// go through the array every three bytes, we'll deal with trailing stuff later
@@ -1952,15 +2018,15 @@ function assert (test, message) {
 		switch (extraBytes) {
 			case 1:
 				temp = uint8[uint8.length - 1];
-				output += lookup[temp >> 2];
-				output += lookup[(temp << 4) & 0x3F];
+				output += encode(temp >> 2);
+				output += encode((temp << 4) & 0x3F);
 				output += '==';
 				break;
 			case 2:
 				temp = (uint8[uint8.length - 2] << 8) + (uint8[uint8.length - 1]);
-				output += lookup[temp >> 10];
-				output += lookup[(temp >> 4) & 0x3F];
-				output += lookup[(temp << 2) & 0x3F];
+				output += encode(temp >> 10);
+				output += encode((temp >> 4) & 0x3F);
+				output += encode((temp << 2) & 0x3F);
 				output += '=';
 				break;
 		}
@@ -1971,6 +2037,7 @@ function assert (test, message) {
 	module.exports.toByteArray = b64ToByteArray;
 	module.exports.fromByteArray = uint8ToBase64;
 }());
+
 
 },{}],9:[function(require,module,exports){
 var undefined = (void 0); // Paranoia
@@ -9202,11 +9269,11 @@ var PROGRESS_UNIFORM = "progress";
 var RESOLUTION_UNIFORM = "resolution";
 
 var CONTEXTS = ["webgl", "experimental-webgl"];
-function getWebGLContext (canvas) {
+function getWebGLContext (canvas, options) {
   if (!canvas.getContext) return;
   for (var i = 0; i < CONTEXTS.length; ++i) {
     try {
-      var ctx = canvas.getContext(CONTEXTS[i]);
+      var ctx = canvas.getContext(CONTEXTS[i], options||{});
       if (ctx) return ctx;
     } catch(e) {
     }
@@ -9255,7 +9322,7 @@ function GlslTransition (canvas) {
 
   function init () {
     transitions = [];
-    gl = getWebGLContext(canvas);
+    gl = getWebGLContext(canvas, GlslTransition.defaults.contextAttributes);
     canvas.addEventListener("webglcontextlost", onContextLost, false);
     canvas.addEventListener("webglcontextrestored", onContextRestored, false);
   }
@@ -9328,10 +9395,20 @@ function GlslTransition (canvas) {
     if (arguments.length < 1 || arguments.length > 2 || typeof glsl !== "string")
       throw new Error("Bad arguments. usage: T(glsl [, options])");
 
+    var glslTypes = glslExports(glsl);
+
+    for (var name in defaultUniforms) {
+      if (name === RESOLUTION_UNIFORM) {
+        throw new Error("The '"+name+"' uniform is reserved, you must not use it.");
+      }
+      if (!(name in glslTypes.uniforms)) {
+        throw new Error("uniform '"+name+"': This uniform does not exist in your GLSL code.");
+      }
+    }
+
     // Second level variables
     var shader, textureUnits, textures, currentAnimationD;
 
-    var glslTypes = glslExports(glsl);
     function load () {
       if (!gl) return;
       shader = loadTransitionShader(glsl, glslTypes);
@@ -9387,7 +9464,7 @@ function GlslTransition (canvas) {
         syncTexture(texture, value);
         shader.uniforms[name] = i;
       }
-      else if (typeof value === "number") {
+      else {
         shader.uniforms[name] = value;
       }
     }
@@ -9430,9 +9507,28 @@ function GlslTransition (canvas) {
      */
     function transition (uniforms, duration, easing) {
       if (!easing) easing = identity;
-      // Validate Bad Arguments static errors
+
+      // Validate static errors: Bad arguments / missing uniforms
       if (arguments.length < 2 || arguments.length > 3 || typeof uniforms !== "object" || typeof duration !== "number" || duration <= 0 || typeof easing !== "function")
         throw new Error("Bad arguments. usage: t(uniforms, duration, easing) -- uniforms is an Object, duration an integer > 0, easing an optional function.");
+
+      var allUniforms = extend({}, defaultUniforms, uniforms);
+      allUniforms[PROGRESS_UNIFORM] = easing(0);
+      var name;
+      for (name in glslTypes.uniforms) {
+        if (name === RESOLUTION_UNIFORM) continue;
+        if (!(name in allUniforms)) {
+          throw new Error("uniform '"+name+"': You must provide an initial value.");
+        }
+      }
+      for (name in uniforms) {
+        if (name === RESOLUTION_UNIFORM) {
+          throw new Error("The '"+name+"' uniform is reserved, you must not use it.");
+        }
+        if (!(name in glslTypes.uniforms)) {
+          throw new Error("uniform '"+name+"': This uniform does not exist in your GLSL code.");
+        }
+      }
 
       // Validate Runtime errors
       if (!gl) return Q.reject(new Error("WebGL context is null."));
@@ -9442,24 +9538,6 @@ function GlslTransition (canvas) {
       }
       catch (e) {
         return Q.reject(e);
-      }
-
-      var allUniforms = extend({}, uniforms, defaultUniforms);
-      allUniforms[PROGRESS_UNIFORM] = 0;
-      var name;
-      for (name in shader.uniforms) {
-        if (name === RESOLUTION_UNIFORM) continue;
-        if (!(name in allUniforms)) {
-          throw new Error("uniform '"+name+"': You must provide an initial value.");
-        }
-      }
-      for (name in allUniforms) {
-        if (name === RESOLUTION_UNIFORM) {
-          throw new Error("The '"+name+"' uniform is reserved, you must not use it.");
-        }
-        if (!(name in shader.uniforms)) {
-          throw new Error("uniform '"+name+"': This uniform does not exist in your GLSL code.");
-        }
       }
 
       // If shader has changed, we need to bind it
@@ -9488,11 +9566,19 @@ function GlslTransition (canvas) {
     return transition;
   }
 
+  createTransition.getGL = function () {
+    return gl;
+  };
+
   // Finally init the GlslTransition context
   init();
 
   return createTransition;
 }
+
+GlslTransition.defaults = {
+  contextAttributes: { preserveDrawingBuffer: true }
+};
 
 GlslTransition.isSupported = function () {
   var c = document.createElement("canvas");
@@ -9559,9 +9645,15 @@ module.exports=require(35)
 },{"q":37}],39:[function(require,module,exports){
 module.exports = "\n#define GLSLIFY 1\n\n#ifdef GL_ES\n\nprecision highp float;\n#endif\n\nuniform sampler2D from;\nuniform sampler2D to;\nuniform float progress;\nuniform vec2 resolution;\nuniform float size;\nvec4 blur(sampler2D t, vec2 c, float b) {\n  vec4 sum = texture2D(t, c);\n  sum += texture2D(t, c + b * vec2(-0.326212, -0.405805));\n  sum += texture2D(t, c + b * vec2(-0.840144, -0.073580));\n  sum += texture2D(t, c + b * vec2(-0.695914, 0.457137));\n  sum += texture2D(t, c + b * vec2(-0.203345, 0.620716));\n  sum += texture2D(t, c + b * vec2(0.962340, -0.194983));\n  sum += texture2D(t, c + b * vec2(0.473434, -0.480026));\n  sum += texture2D(t, c + b * vec2(0.519456, 0.767022));\n  sum += texture2D(t, c + b * vec2(0.185461, -0.893124));\n  sum += texture2D(t, c + b * vec2(0.507431, 0.064425));\n  sum += texture2D(t, c + b * vec2(0.896420, 0.412458));\n  sum += texture2D(t, c + b * vec2(-0.321940, -0.932615));\n  sum += texture2D(t, c + b * vec2(-0.791559, -0.597705));\n  return sum / 13.0;\n}\nvoid main() {\n  vec2 p = gl_FragCoord.xy / resolution.xy;\n  float inv = 1. - progress;\n  gl_FragColor = inv * blur(from, p, progress * size) + progress * blur(to, p, inv * size);\n}"
 },{}],40:[function(require,module,exports){
-module.exports = "\n#define GLSLIFY 1\n\n#ifdef GL_ES\n\nprecision highp float;\n#endif\n\nuniform sampler2D from;\nuniform sampler2D to;\nuniform float progress;\nuniform vec2 resolution;\nuniform float size;\nuniform float zoom;\nvoid main() {\n  vec2 p = gl_FragCoord.xy / resolution.xy;\n  float inv = 1. - progress;\n  vec2 disp = size * vec2(cos(zoom * p.x), sin(zoom * p.y));\n  vec4 texTo = texture2D(to, p + inv * disp);\n  vec4 texFrom = texture2D(from, p + progress * disp);\n  gl_FragColor = texTo * progress + texFrom * inv;\n}"
+module.exports = "\n#define GLSLIFY 1\n\n#ifdef GL_ES\n\nprecision highp float;\n#endif\n\nuniform sampler2D from;\nuniform sampler2D to;\nuniform float progress;\nuniform vec2 resolution;\nuniform float smoothness;\nuniform bool opening;\nconst vec2 center = vec2(0.5, 0.5);\nconst float SQRT_2 = 1.414213562373;\nvoid main() {\n  vec2 p = gl_FragCoord.xy / resolution.xy;\n  float x = opening ? progress : 1. - progress;\n  float m = smoothstep(-smoothness, 0.0, SQRT_2 * distance(center, p) - x * (1. + smoothness));\n  gl_FragColor = mix(texture2D(from, p), texture2D(to, p), opening ? 1. - m : m);\n}"
 },{}],41:[function(require,module,exports){
-module.exports = "\n#define GLSLIFY 1\n\n#ifdef GL_ES\n\nprecision highp float;\n#endif\n\nuniform sampler2D from;\nuniform sampler2D to;\nuniform float progress;\nuniform vec2 resolution;\nuniform float size;\nvoid main() {\n  vec2 p = gl_FragCoord.xy / resolution.xy;\n  float x = smoothstep(p.x - size, p.x + size, progress * (1. + 2. * size) - size);\n  vec4 texTo = texture2D(to, p);\n  vec4 texFrom = texture2D(from, p);\n  vec4 xTo = vec4(smoothstep(0.00, 0.50, x), smoothstep(0.25, 0.75, x), smoothstep(0.50, 1.00, x), x);\n  vec4 xFrom = vec4(1. - x);\n  gl_FragColor = texTo * xTo + texFrom * xFrom;\n}"
+module.exports = "\n#define GLSLIFY 1\n\n#ifdef GL_ES\n\nprecision highp float;\n#endif\n\nuniform sampler2D from;\nuniform sampler2D to;\nuniform float progress;\nuniform vec2 resolution;\nuniform float size;\nuniform float zoom;\nvoid main() {\n  vec2 p = gl_FragCoord.xy / resolution.xy;\n  float inv = 1. - progress;\n  vec2 disp = size * vec2(cos(zoom * p.x), sin(zoom * p.y));\n  vec4 texTo = texture2D(to, p + inv * disp);\n  vec4 texFrom = texture2D(from, p + progress * disp);\n  gl_FragColor = texTo * progress + texFrom * inv;\n}"
 },{}],42:[function(require,module,exports){
+module.exports = "\n#define GLSLIFY 1\n\n#ifdef GL_ES\n\nprecision highp float;\n#endif\n\nuniform sampler2D from;\nuniform sampler2D to;\nuniform float progress;\nuniform vec2 resolution;\nuniform vec3 color;\nuniform float colorPhase;\nvoid main() {\n  vec2 p = gl_FragCoord.xy / resolution.xy;\n  gl_FragColor = mix(mix(vec4(color, 1.0), texture2D(from, p), smoothstep(1.0 - colorPhase, 0.0, progress)), mix(vec4(color, 1.0), texture2D(to, p), smoothstep(colorPhase, 1.0, progress)), progress);\n}"
+},{}],43:[function(require,module,exports){
+module.exports = "\n#define GLSLIFY 1\n\n#ifdef GL_ES\n\nprecision highp float;\n#endif\n\nuniform sampler2D from;\nuniform sampler2D to;\nuniform float progress;\nuniform vec2 resolution;\nuniform float size;\nvoid main() {\n  vec2 p = gl_FragCoord.xy / resolution.xy;\n  float x = smoothstep(p.x - size, p.x + size, progress * (1. + 2. * size) - size);\n  vec4 texTo = texture2D(to, p);\n  vec4 texFrom = texture2D(from, p);\n  vec4 xTo = vec4(smoothstep(0.00, 0.50, x), smoothstep(0.25, 0.75, x), smoothstep(0.50, 1.00, x), x);\n  vec4 xFrom = vec4(1. - x);\n  gl_FragColor = texTo * xTo + texFrom * xFrom;\n}"
+},{}],44:[function(require,module,exports){
 module.exports = "\n#define GLSLIFY 1\n\n#ifdef GL_ES\n\nprecision highp float;\n#endif\n\nuniform sampler2D from;\nuniform sampler2D to;\nuniform float progress;\nuniform vec2 resolution;\nuniform float size;\nfloat rand(vec2 co) {\n  return fract(sin(dot(co.xy, vec2(12.9898, 78.233))) * 43758.5453);\n}\nvoid main() {\n  vec2 p = gl_FragCoord.xy / resolution.xy;\n  float xTo = progress * (1.0 + 2.0 * size) - size;\n  float r = size * rand(vec2(0, p.y));\n  xTo = clamp(1. - (p.x - xTo - r) / size, 0., 1.);\n  float xFrom = 1.0 - xTo;\n  gl_FragColor = xTo * texture2D(to, p) + xFrom * texture2D(from, p);\n}"
+},{}],45:[function(require,module,exports){
+module.exports = "\n#define GLSLIFY 1\n\n#ifdef GL_ES\n\nprecision highp float;\n#endif\n\nuniform sampler2D from;\nuniform sampler2D to;\nuniform float progress;\nuniform vec2 resolution;\nuniform vec2 direction;\nuniform float smoothness;\nconst vec2 center = vec2(0.5, 0.5);\nvoid main() {\n  vec2 p = gl_FragCoord.xy / resolution.xy;\n  vec2 v = normalize(direction);\n  v /= abs(v.x) + abs(v.y);\n  float d = v.x * center.x + v.y * center.y;\n  float m = smoothstep(-smoothness, 0.0, v.x * p.x + v.y * p.y - (d - 0.5 + progress * (1. + smoothness)));\n  gl_FragColor = mix(texture2D(to, p), texture2D(from, p), m);\n}"
 },{}]},{},[2])
