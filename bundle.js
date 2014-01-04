@@ -197,58 +197,15 @@ var Q = require("q");
 var Qimage = require("qimage");
 var BezierEasingEditor = require("./bezier-easing-editor");
 
-var currentTransition;
-var transitions;
-
-// Bind sliders
-var transitionDuration, stayTime;
-var $duration = document.getElementById("duration");
-var $delay = document.getElementById("delay");
-var $durationValue = document.getElementById("durationValue");
-var $delayValue = document.getElementById("delayValue");
-var $transition = document.getElementById("transition");
-var $easingtext = document.getElementById("easingtext");
 var easingEditor = new BezierEasingEditor(document.getElementById("easing"));
-
-function syncEasing () {
-  var easing = easingEditor.getEasing();
-  $easingtext.innerHTML = easing.toString();
-}
-function syncDuration () {
-  $durationValue.innerHTML = $duration.value;
-  transitionDuration = parseInt($duration.value, 10);
-}
-function syncDelay () {
-  $delayValue.innerHTML = $delay.value;
-  stayTime = parseInt($delay.value, 10);
-}
-function syncTransition () {
-  var name = $transition.value;
-  currentTransition = transitions[name];
-}
-function init () {
-  for (var name in transitions) {
-    var option = document.createElement("option");
-    option.innerHTML = name;
-    option.value = name;
-    $transition.appendChild(option);
-  }
-  syncEasing();
-  syncDuration();
-  syncDelay();
-  syncTransition();
-  easingEditor.onChange = syncEasing;
-  $duration.addEventListener("change", syncDuration, false);
-  $delay.addEventListener("change", syncDelay, false);
-  $transition.addEventListener("change", syncTransition, false);
-}
-
-// Cool stuff from the library starts now...
+var transitionDuration, stayTime, currentTransition;
+var transitions;
 
 var canvas = document.getElementById("viewport");
 var Transition = GlslTransition(canvas);
 transitions = {
-  "swap"       : Transition(require("./transitions/swap.glsl"), { uniforms: {} }),
+  "doorway"       : Transition(require("./transitions/doorway.glsl"), { uniforms: { reflection: 0.4, perspective: 0.4, depth: 3.0 } }),
+  "swap"       : Transition(require("./transitions/swap.glsl"), { uniforms: { reflection: 0.4, perspective: 0.2, depth: 3.0 } }),
   "vwipe"      : Transition(require("./transitions/wipe.glsl"), { uniforms: { direction: [1, 0], smoothness: 0.5 } }),
   "hwipe"      : Transition(require("./transitions/wipe.glsl"), { uniforms: { direction: [0, -1], smoothness: 0.5 } }),
   "circleopen" : Transition(require("./transitions/circleopen.glsl"), { uniforms: { opening: true, smoothness: 0.3 } }),
@@ -308,12 +265,51 @@ function crossOriginLoading (src) {
   return Qimage(src, { crossorigin: "Anonymous" });
 }
 
-init();
 Q.all(images.map(crossOriginLoading))
  .then(loopForever)
  .done();
 
-},{"./bezier-easing-editor":1,"./transitions/blur.glsl":39,"./transitions/circleopen.glsl":40,"./transitions/deformation.glsl":41,"./transitions/fadetocolor.glsl":42,"./transitions/rainbow.glsl":43,"./transitions/swap.glsl":44,"./transitions/wind.glsl":45,"./transitions/wipe.glsl":46,"glsl-transition":36,"q":37,"qimage":38}],3:[function(require,module,exports){
+// Bind sliders
+var $duration = document.getElementById("duration");
+var $delay = document.getElementById("delay");
+var $durationValue = document.getElementById("durationValue");
+var $delayValue = document.getElementById("delayValue");
+var $transition = document.getElementById("transition");
+var $easingtext = document.getElementById("easingtext");
+
+function syncEasing () {
+  var easing = easingEditor.getEasing();
+  $easingtext.innerHTML = easing.toString();
+}
+function syncDuration () {
+  $durationValue.innerHTML = $duration.value;
+  transitionDuration = parseInt($duration.value, 10);
+}
+function syncDelay () {
+  $delayValue.innerHTML = $delay.value;
+  stayTime = parseInt($delay.value, 10);
+}
+function syncTransition () {
+  var name = $transition.value;
+  currentTransition = transitions[name];
+}
+
+for (var name in transitions) {
+  var option = document.createElement("option");
+  option.innerHTML = name;
+  option.value = name;
+  $transition.appendChild(option);
+}
+syncEasing();
+syncDuration();
+syncDelay();
+syncTransition();
+easingEditor.onChange = syncEasing;
+$duration.addEventListener("change", syncDuration, false);
+$delay.addEventListener("change", syncDelay, false);
+$transition.addEventListener("change", syncTransition, false);
+
+},{"./bezier-easing-editor":1,"./transitions/blur.glsl":39,"./transitions/circleopen.glsl":40,"./transitions/deformation.glsl":41,"./transitions/doorway.glsl":42,"./transitions/fadetocolor.glsl":43,"./transitions/rainbow.glsl":44,"./transitions/swap.glsl":45,"./transitions/wind.glsl":46,"./transitions/wipe.glsl":47,"glsl-transition":36,"q":37,"qimage":38}],3:[function(require,module,exports){
 (function (definition) {
   if (typeof exports === "object") {
     module.exports = definition();
@@ -9671,13 +9667,15 @@ module.exports = "\n#define GLSLIFY 1\n\n#ifdef GL_ES\n\nprecision highp float;\
 },{}],41:[function(require,module,exports){
 module.exports = "\n#define GLSLIFY 1\n\n#ifdef GL_ES\n\nprecision highp float;\n#endif\n\nuniform sampler2D from;\nuniform sampler2D to;\nuniform float progress;\nuniform vec2 resolution;\nuniform float size;\nuniform float zoom;\nvoid main() {\n  vec2 p = gl_FragCoord.xy / resolution.xy;\n  float inv = 1. - progress;\n  vec2 disp = size * vec2(cos(zoom * p.x), sin(zoom * p.y));\n  vec4 texTo = texture2D(to, p + inv * disp);\n  vec4 texFrom = texture2D(from, p + progress * disp);\n  gl_FragColor = texTo * progress + texFrom * inv;\n}"
 },{}],42:[function(require,module,exports){
-module.exports = "\n#define GLSLIFY 1\n\n#ifdef GL_ES\n\nprecision highp float;\n#endif\n\nuniform sampler2D from;\nuniform sampler2D to;\nuniform float progress;\nuniform vec2 resolution;\nuniform vec3 color;\nuniform float colorPhase;\nvoid main() {\n  vec2 p = gl_FragCoord.xy / resolution.xy;\n  gl_FragColor = mix(mix(vec4(color, 1.0), texture2D(from, p), smoothstep(1.0 - colorPhase, 0.0, progress)), mix(vec4(color, 1.0), texture2D(to, p), smoothstep(colorPhase, 1.0, progress)), progress);\n}"
+module.exports = "\n#define GLSLIFY 1\n\n#ifdef GL_ES\n\nprecision highp float;\n#endif\n\nuniform sampler2D from;\nuniform sampler2D to;\nuniform float progress;\nuniform vec2 resolution;\nuniform float reflection;\nuniform float perspective;\nuniform float depth;\nconst vec4 black = vec4(0.0, 0.0, 0.0, 1.0);\nconst vec2 boundMin = vec2(0.0, 0.0);\nconst vec2 boundMax = vec2(1.0, 1.0);\nbool inBounds(vec2 p) {\n  return all(lessThan(boundMin, p)) && all(lessThan(p, boundMax));\n}\nvec2 project(vec2 p) {\n  return p * vec2(1.0, -1.2) + vec2(0.0, -0.02);\n}\nvec4 bgColor(vec2 p, vec2 pto) {\n  vec4 c = black;\n  pto = project(pto);\n  if(inBounds(pto)) {\n    c += mix(black, texture2D(to, pto), reflection * mix(1.0, 0.0, pto.y));\n  }\n  return c;\n}\nvoid main() {\n  vec2 p = gl_FragCoord.xy / resolution.xy;\n  vec2 pfr = vec2(-1.), pto = vec2(-1.);\n  float middleSlit = 2.0 * abs(p.x - 0.5) - progress;\n  if(middleSlit > 0.0) {\n    pfr = p + (p.x > 0.5 ? -1.0 : 1.0) * vec2(0.5 * progress, 0.0);\n    float d = 1.0 / (1.0 + perspective * progress * (1.0 - middleSlit));\n    pfr.y -= d / 2.;\n    pfr.y *= d;\n    pfr.y += d / 2.;\n  }\n  float size = mix(1.0, depth, 1. - progress);\n  pto = (p + vec2(-0.5, -0.5)) * vec2(size, size) + vec2(0.5, 0.5);\n  if(inBounds(pfr)) {\n    gl_FragColor = texture2D(from, pfr);\n  } else if(inBounds(pto)) {\n    gl_FragColor = texture2D(to, pto);\n  } else {\n    gl_FragColor = bgColor(p, pto);\n  }\n  \n}"
 },{}],43:[function(require,module,exports){
-module.exports = "\n#define GLSLIFY 1\n\n#ifdef GL_ES\n\nprecision highp float;\n#endif\n\nuniform sampler2D from;\nuniform sampler2D to;\nuniform float progress;\nuniform vec2 resolution;\nuniform float size;\nvoid main() {\n  vec2 p = gl_FragCoord.xy / resolution.xy;\n  float x = smoothstep(p.x - size, p.x + size, progress * (1. + 2. * size) - size);\n  vec4 texTo = texture2D(to, p);\n  vec4 texFrom = texture2D(from, p);\n  vec4 xTo = vec4(smoothstep(0.00, 0.50, x), smoothstep(0.25, 0.75, x), smoothstep(0.50, 1.00, x), x);\n  vec4 xFrom = vec4(1. - x);\n  gl_FragColor = texTo * xTo + texFrom * xFrom;\n}"
+module.exports = "\n#define GLSLIFY 1\n\n#ifdef GL_ES\n\nprecision highp float;\n#endif\n\nuniform sampler2D from;\nuniform sampler2D to;\nuniform float progress;\nuniform vec2 resolution;\nuniform vec3 color;\nuniform float colorPhase;\nvoid main() {\n  vec2 p = gl_FragCoord.xy / resolution.xy;\n  gl_FragColor = mix(mix(vec4(color, 1.0), texture2D(from, p), smoothstep(1.0 - colorPhase, 0.0, progress)), mix(vec4(color, 1.0), texture2D(to, p), smoothstep(colorPhase, 1.0, progress)), progress);\n}"
 },{}],44:[function(require,module,exports){
-module.exports = "\n#define GLSLIFY 1\n\n#ifdef GL_ES\n\nprecision highp float;\n#endif\n\nuniform sampler2D from;\nuniform sampler2D to;\nuniform float progress;\nuniform vec2 resolution;\nconst float reflection = 0.3;\nconst float perspective = 0.3;\nconst float maxDepth = 3.0;\nconst vec4 black = vec4(0.0, 0.0, 0.0, 1.0);\nconst vec2 boundMin = vec2(0.0, 0.0);\nconst vec2 boundMax = vec2(1.0, 1.0);\nbool inBounds(vec2 p) {\n  return all(lessThan(boundMin, p)) && all(lessThan(p, boundMax));\n}\nvec4 bgColor(vec2 p, vec2 pfr, vec2 pto) {\n  vec4 c = black;\n  pfr = pfr * vec2(1.0, -1.0) + vec2(0.0, -0.02);\n  if(inBounds(pfr)) {\n    c += mix(black, texture2D(from, pfr), reflection * mix(1.0, -1.0, pfr.y));\n  }\n  pto = pto * vec2(1.0, -1.0) + vec2(0.0, -0.02);\n  if(inBounds(pto)) {\n    c += mix(black, texture2D(to, pto), reflection * mix(1.0, -1.0, pto.y));\n  }\n  return c;\n}\nvoid main() {\n  vec2 p = gl_FragCoord.xy / resolution.xy;\n  vec2 pfr, pto = vec2(-1.);\n  float size = mix(1.0, maxDepth, progress);\n  float persp = perspective * progress;\n  pfr = (p + vec2(-0.0, -0.5)) * vec2(size / (1.0 - perspective * progress), size / (1.0 - size * persp * p.x)) + vec2(0.0, 0.5);\n  size = mix(1.0, maxDepth, 1. - progress);\n  persp = perspective * (1. - progress);\n  pto = (p + vec2(-1.0, -0.5)) * vec2(size / (1.0 - perspective * (1.0 - progress)), size / (1.0 - size * persp * (0.5 - p.x))) + vec2(1.0, 0.5);\n  bool fromOver = progress < 0.5;\n  if(fromOver) {\n    if(inBounds(pfr)) {\n      gl_FragColor = texture2D(from, pfr);\n    } else if(inBounds(pto)) {\n      gl_FragColor = texture2D(to, pto);\n    } else {\n      gl_FragColor = bgColor(p, pfr, pto);\n    }\n    \n  } else {\n    if(inBounds(pto)) {\n      gl_FragColor = texture2D(to, pto);\n    } else if(inBounds(pfr)) {\n      gl_FragColor = texture2D(from, pfr);\n    } else {\n      gl_FragColor = bgColor(p, pfr, pto);\n    }\n    \n  }\n}"
+module.exports = "\n#define GLSLIFY 1\n\n#ifdef GL_ES\n\nprecision highp float;\n#endif\n\nuniform sampler2D from;\nuniform sampler2D to;\nuniform float progress;\nuniform vec2 resolution;\nuniform float size;\nvoid main() {\n  vec2 p = gl_FragCoord.xy / resolution.xy;\n  float x = smoothstep(p.x - size, p.x + size, progress * (1. + 2. * size) - size);\n  vec4 texTo = texture2D(to, p);\n  vec4 texFrom = texture2D(from, p);\n  vec4 xTo = vec4(smoothstep(0.00, 0.50, x), smoothstep(0.25, 0.75, x), smoothstep(0.50, 1.00, x), x);\n  vec4 xFrom = vec4(1. - x);\n  gl_FragColor = texTo * xTo + texFrom * xFrom;\n}"
 },{}],45:[function(require,module,exports){
-module.exports = "\n#define GLSLIFY 1\n\n#ifdef GL_ES\n\nprecision highp float;\n#endif\n\nuniform sampler2D from;\nuniform sampler2D to;\nuniform float progress;\nuniform vec2 resolution;\nuniform float size;\nfloat rand(vec2 co) {\n  return fract(sin(dot(co.xy, vec2(12.9898, 78.233))) * 43758.5453);\n}\nvoid main() {\n  vec2 p = gl_FragCoord.xy / resolution.xy;\n  float xTo = progress * (1.0 + 2.0 * size) - size;\n  float r = size * rand(vec2(0, p.y));\n  xTo = clamp(1. - (p.x - xTo - r) / size, 0., 1.);\n  float xFrom = 1.0 - xTo;\n  gl_FragColor = xTo * texture2D(to, p) + xFrom * texture2D(from, p);\n}"
+module.exports = "\n#define GLSLIFY 1\n\n#ifdef GL_ES\n\nprecision highp float;\n#endif\n\nuniform sampler2D from;\nuniform sampler2D to;\nuniform float progress;\nuniform vec2 resolution;\nuniform float reflection;\nuniform float perspective;\nuniform float depth;\nconst vec4 black = vec4(0.0, 0.0, 0.0, 1.0);\nconst vec2 boundMin = vec2(0.0, 0.0);\nconst vec2 boundMax = vec2(1.0, 1.0);\nbool inBounds(vec2 p) {\n  return all(lessThan(boundMin, p)) && all(lessThan(p, boundMax));\n}\nvec2 project(vec2 p) {\n  return p * vec2(1.0, -1.2) + vec2(0.0, -0.02);\n}\nvec4 bgColor(vec2 p, vec2 pfr, vec2 pto) {\n  vec4 c = black;\n  pfr = project(pfr);\n  if(inBounds(pfr)) {\n    c += mix(black, texture2D(from, pfr), reflection * mix(1.0, 0.0, pfr.y));\n  }\n  pto = project(pto);\n  if(inBounds(pto)) {\n    c += mix(black, texture2D(to, pto), reflection * mix(1.0, 0.0, pto.y));\n  }\n  return c;\n}\nvoid main() {\n  vec2 p = gl_FragCoord.xy / resolution.xy;\n  vec2 pfr, pto = vec2(-1.);\n  float size = mix(1.0, depth, progress);\n  float persp = perspective * progress;\n  pfr = (p + vec2(-0.0, -0.5)) * vec2(size / (1.0 - perspective * progress), size / (1.0 - size * persp * p.x)) + vec2(0.0, 0.5);\n  size = mix(1.0, depth, 1. - progress);\n  persp = perspective * (1. - progress);\n  pto = (p + vec2(-1.0, -0.5)) * vec2(size / (1.0 - perspective * (1.0 - progress)), size / (1.0 - size * persp * (0.5 - p.x))) + vec2(1.0, 0.5);\n  bool fromOver = progress < 0.5;\n  if(fromOver) {\n    if(inBounds(pfr)) {\n      gl_FragColor = texture2D(from, pfr);\n    } else if(inBounds(pto)) {\n      gl_FragColor = texture2D(to, pto);\n    } else {\n      gl_FragColor = bgColor(p, pfr, pto);\n    }\n    \n  } else {\n    if(inBounds(pto)) {\n      gl_FragColor = texture2D(to, pto);\n    } else if(inBounds(pfr)) {\n      gl_FragColor = texture2D(from, pfr);\n    } else {\n      gl_FragColor = bgColor(p, pfr, pto);\n    }\n    \n  }\n}"
 },{}],46:[function(require,module,exports){
+module.exports = "\n#define GLSLIFY 1\n\n#ifdef GL_ES\n\nprecision highp float;\n#endif\n\nuniform sampler2D from;\nuniform sampler2D to;\nuniform float progress;\nuniform vec2 resolution;\nuniform float size;\nfloat rand(vec2 co) {\n  return fract(sin(dot(co.xy, vec2(12.9898, 78.233))) * 43758.5453);\n}\nvoid main() {\n  vec2 p = gl_FragCoord.xy / resolution.xy;\n  float xTo = progress * (1.0 + 2.0 * size) - size;\n  float r = size * rand(vec2(0, p.y));\n  xTo = clamp(1. - (p.x - xTo - r) / size, 0., 1.);\n  float xFrom = 1.0 - xTo;\n  gl_FragColor = xTo * texture2D(to, p) + xFrom * texture2D(from, p);\n}"
+},{}],47:[function(require,module,exports){
 module.exports = "\n#define GLSLIFY 1\n\n#ifdef GL_ES\n\nprecision highp float;\n#endif\n\nuniform sampler2D from;\nuniform sampler2D to;\nuniform float progress;\nuniform vec2 resolution;\nuniform vec2 direction;\nuniform float smoothness;\nconst vec2 center = vec2(0.5, 0.5);\nvoid main() {\n  vec2 p = gl_FragCoord.xy / resolution.xy;\n  vec2 v = normalize(direction);\n  v /= abs(v.x) + abs(v.y);\n  float d = v.x * center.x + v.y * center.y;\n  float m = smoothstep(-smoothness, 0.0, v.x * p.x + v.y * p.y - (d - 0.5 + progress * (1. + smoothness)));\n  gl_FragColor = mix(texture2D(to, p), texture2D(from, p), m);\n}"
 },{}]},{},[2])
