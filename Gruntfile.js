@@ -72,7 +72,7 @@ module.exports = function (grunt) {
         options: {
           base: '.'
         },
-        src: ['**', '!node_modules/**']
+        src: ['**', '!example/node_modules/**']
       }
     },
     shell: {
