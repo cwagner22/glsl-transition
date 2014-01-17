@@ -1,0 +1,30 @@
+0 info it worked if it ends with ok
+1 verbose cli [ '/usr/local/opt/nvm/v0.10.24/bin/node',
+1 verbose cli   '/usr/local/opt/nvm/v0.10.24/bin/npm',
+1 verbose cli   'run',
+1 verbose cli   'build' ]
+2 info using npm@1.3.21
+3 info using node@v0.10.24
+4 verbose node symlink /usr/local/opt/nvm/v0.10.24/bin/node
+5 verbose run-script [ 'prebuild', 'build', 'postbuild' ]
+6 info prebuild glsl-transition-example@0.1.9
+7 info build glsl-transition-example@0.1.9
+8 verbose unsafe-perm in lifecycle true
+9 info glsl-transition-example@0.1.9 Failed to exec build script
+10 error glsl-transition-example@0.1.9 build: `browserify ./main.js -t glslifyify -o ./bundle.js`
+10 error Exit status 1
+11 error Failed at the glsl-transition-example@0.1.9 build script.
+11 error This is most likely a problem with the glsl-transition-example package,
+11 error not with npm itself.
+11 error Tell the author that this fails on your system:
+11 error     browserify ./main.js -t glslifyify -o ./bundle.js
+11 error You can get their info via:
+11 error     npm owner ls glsl-transition-example
+11 error There is likely additional logging output above.
+12 error System Darwin 13.0.0
+13 error command "/usr/local/opt/nvm/v0.10.24/bin/node" "/usr/local/opt/nvm/v0.10.24/bin/npm" "run" "build"
+14 error cwd /Users/gre/dev/glsl-transition/example
+15 error node -v v0.10.24
+16 error npm -v 1.3.21
+17 error code ELIFECYCLE
+18 verbose exit [ 1, true ]
